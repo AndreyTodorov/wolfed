@@ -23,6 +23,7 @@ export function NightPhase() {
   }>({ primary: null, secondary: null });
 
   // Get all active roles sorted by wake order
+  // Group pack roles (werewolves, vampires) together
   const activeRoles = useMemo(() => {
     const alivePlayers = players.filter((p) => p.isAlive);
     const rolesWithPlayers = alivePlayers.map((p) => ({
@@ -35,8 +36,42 @@ export function NightPhase() {
       (rp) => rp.role.wakeOrder !== null
     );
 
+    // Group pack roles together
+    const packRoles = ["werewolf", "white_wolf_werewolf", "vampire", "vampire_master"];
+    const grouped: Array<{ player: Player; role: Player["role"]; packMembers?: Player[] }> = [];
+    const processed = new Set<string>();
+
+    wakingRoles.forEach((rp) => {
+      if (processed.has(rp.player.id)) return;
+
+      // Check if this is a pack role
+      if (packRoles.includes(rp.role.id)) {
+        // Find all players with the same faction (Werewolves or Vampires)
+        const packMembers = alivePlayers.filter(
+          (p) =>
+            p.role.faction === rp.role.faction &&
+            packRoles.includes(p.role.id) &&
+            p.role.wakeOrder === rp.role.wakeOrder
+        );
+
+        // Mark all pack members as processed
+        packMembers.forEach((pm) => processed.add(pm.id));
+
+        // Add one entry for the whole pack
+        grouped.push({
+          player: rp.player,
+          role: rp.role,
+          packMembers: packMembers,
+        });
+      } else {
+        // Regular role - add normally
+        processed.add(rp.player.id);
+        grouped.push(rp);
+      }
+    });
+
     // Sort by wake order
-    const sorted = wakingRoles.sort(
+    const sorted = grouped.sort(
       (a, b) => (a.role.wakeOrder || 999) - (b.role.wakeOrder || 999)
     );
 
@@ -51,22 +86,33 @@ export function NightPhase() {
     if (currentRole) {
       setActiveRole(currentRole.role.id);
       updateMetadata({ currentNightRoleIndex: currentRoleIndex });
+    } else {
+      // No current role means night is complete
+      setActiveRole(null);
     }
-  }, [currentRole, currentRoleIndex]);
+  }, [currentRole, currentRoleIndex, setActiveRole, updateMetadata]);
 
   const handleSkipRole = () => {
-    addNightLog(`${currentRole.role.name} (${currentRole.player.name}) - Skipped`);
+    const displayName = currentRole.packMembers && currentRole.packMembers.length > 1
+      ? `${currentRole.role.faction} Pack`
+      : `${currentRole.role.name} (${currentRole.player.name})`;
+    addNightLog(`${displayName} - Skipped`);
     moveToNextRole();
   };
 
   const handleConfirmAction = () => {
     if (!currentRole) return;
 
-    // Check if player is ability blocked (Hag effect)
-    if (currentRole.player.isAbilityBlocked) {
-      addNightLog(
-        `${currentRole.role.name} (${currentRole.player.name}) - BLOCKED by Hag`
-      );
+    // Check if player/pack is ability blocked (Hag effect)
+    const isBlocked = currentRole.packMembers
+      ? currentRole.packMembers.every((p) => p.isAbilityBlocked) // All pack members must be blocked
+      : currentRole.player.isAbilityBlocked;
+
+    if (isBlocked) {
+      const displayName = currentRole.packMembers
+        ? `${currentRole.role.faction} Pack`
+        : `${currentRole.role.name} (${currentRole.player.name})`;
+      addNightLog(`${displayName} - BLOCKED by Hag`);
       moveToNextRole();
       return;
     }
@@ -85,9 +131,13 @@ export function NightPhase() {
 
     // Log the action
     const targetPlayer = players.find((p) => p.id === selectedTargets.primary);
+    const displayName = currentRole.packMembers && currentRole.packMembers.length > 1
+      ? `${currentRole.role.faction} Pack`
+      : `${currentRole.role.name} (${currentRole.player.name})`;
+
     const logMessage = targetPlayer
-      ? `${currentRole.role.name} (${currentRole.player.name}) → ${targetPlayer.name}`
-      : `${currentRole.role.name} (${currentRole.player.name}) - Action confirmed`;
+      ? `${displayName} → ${targetPlayer.name}`
+      : `${displayName} - Action confirmed`;
 
     addNightLog(logMessage);
 
@@ -194,9 +244,19 @@ export function NightPhase() {
           <div className="flex items-center gap-3">
             <Moon className="h-6 w-6 text-primary" />
             <div className="flex-1">
-              <CardTitle className="text-2xl">{currentRole.role.name}</CardTitle>
+              <CardTitle className="text-2xl">
+                {currentRole.packMembers && currentRole.packMembers.length > 1
+                  ? `${currentRole.role.faction} Pack`
+                  : currentRole.role.name}
+              </CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Player: {currentRole.player.name}
+                {currentRole.packMembers && currentRole.packMembers.length > 1 ? (
+                  <>
+                    Pack Members: {currentRole.packMembers.map((p) => p.name).join(", ")}
+                  </>
+                ) : (
+                  <>Player: {currentRole.player.name}</>
+                )}
               </p>
             </div>
           </div>
@@ -204,16 +264,43 @@ export function NightPhase() {
         <CardContent className="space-y-4">
           {/* Role Description */}
           <div className="p-3 bg-muted rounded-md">
-            <p className="text-sm">{currentRole.role.description}</p>
+            {currentRole.packMembers && currentRole.packMembers.length > 1 ? (
+              <p className="text-sm">
+                The {currentRole.role.faction} wake up together and choose ONE victim collectively.
+              </p>
+            ) : (
+              <p className="text-sm">{currentRole.role.description}</p>
+            )}
           </div>
 
-          {/* Ability Blocked Warning */}
-          {currentRole.player.isAbilityBlocked && (
-            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-              <p className="text-sm text-destructive font-medium">
-                ⚠️ This player's ability is BLOCKED by the Hag!
-              </p>
-            </div>
+          {/* Ability Blocked Warning - check if any pack member is blocked */}
+          {currentRole.packMembers ? (
+            (() => {
+              const blockedCount = currentRole.packMembers.filter((p) => p.isAbilityBlocked).length;
+              const allBlocked = blockedCount === currentRole.packMembers.length;
+
+              if (blockedCount === 0) return null;
+
+              return (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                  <p className="text-sm text-destructive font-medium">
+                    {allBlocked ? (
+                      <>⚠️ ALL pack members are BLOCKED by the Hag! The pack cannot act.</>
+                    ) : (
+                      <>⚠️ {blockedCount} pack member(s) are BLOCKED by the Hag, but the pack can still act.</>
+                    )}
+                  </p>
+                </div>
+              );
+            })()
+          ) : (
+            currentRole.player.isAbilityBlocked && (
+              <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                <p className="text-sm text-destructive font-medium">
+                  ⚠️ This player's ability is BLOCKED by the Hag!
+                </p>
+              </div>
+            )
           )}
 
           {/* Action Type Indicator */}
@@ -228,7 +315,9 @@ export function NightPhase() {
 
           {/* Target Selection */}
           {currentRole.role.nightAction !== "none" &&
-            !currentRole.player.isAbilityBlocked && (
+            !(currentRole.packMembers
+              ? currentRole.packMembers.every((p) => p.isAbilityBlocked)
+              : currentRole.player.isAbilityBlocked) && (
               <div className="space-y-3">
                 <h4 className="font-medium text-sm">Select Target:</h4>
                 <div className="grid grid-cols-1 gap-2 max-h-[40vh] overflow-y-auto">
