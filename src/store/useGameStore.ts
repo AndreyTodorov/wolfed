@@ -13,6 +13,7 @@ import type {
   GamePhase,
   Faction,
 } from "../types";
+import { resolveNightActions, applyDeaths } from "../lib/nightResolution";
 
 interface GameStore extends GameState {
   // ========== STATE SETTERS ==========
@@ -240,18 +241,38 @@ export const useGameStore = create<GameStore>()(
 
       resolveNightActions: () => {
         const state = get();
-        const { nightActions } = state;
+        const { nightActions, players, metadata } = state;
 
-        // This is where complex resolution logic will go
-        // For now, just log the actions
-        nightActions.forEach((action) => {
-          get().addNightLog(
-            `${action.roleId} performed ${action.actionType} on ${action.targetId}`
-          );
+        // Use the night resolution logic
+        const resolution = resolveNightActions(players, nightActions, metadata);
+
+        // Update metadata
+        if (Object.keys(resolution.metadata).length > 0) {
+          get().updateMetadata(resolution.metadata);
+        }
+
+        // Add logs
+        resolution.logs.forEach((log) => get().addNightLog(log));
+
+        // Apply deaths with linked player handling
+        const { updatedPlayers, linkedDeaths } = applyDeaths(
+          resolution.updatedPlayers,
+          resolution.deaths
+        );
+
+        // Log linked deaths
+        linkedDeaths.forEach((id) => {
+          const player = updatedPlayers.find((p) => p.id === id);
+          if (player) {
+            get().addNightLog(`💔 ${player.name} died (linked player)`);
+          }
         });
 
-        // Process pending deaths
-        get().processPendingDeaths();
+        // Update players
+        set({ players: updatedPlayers });
+
+        // Transition to day announcement
+        set({ phase: "DAY_ANNOUNCE" });
       },
 
       // ========== LOGGING ==========
