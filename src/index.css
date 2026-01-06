@@ -12,5 +12,32 @@
   --color-border: oklch(0.25 0.03 264);
   --color-input: oklch(0.25 0.03 264);
   --color-ring: oklch(0.25 0.03 264);
+  --color-primary: oklch(0.45 0.15 264);
+  --color-primary-foreground: oklch(0.98 0.01 264);
+  --color-success: oklch(0.5 0.15 142);
+  --color-warning: oklch(0.6 0.15 60);
   --radius: 0.5rem;
+}
+
+/* Mobile-first responsive utilities */
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+body {
+  overflow-x: hidden;
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+}
+
+/* Safe area padding for mobile devices (notches, etc.) */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
 }

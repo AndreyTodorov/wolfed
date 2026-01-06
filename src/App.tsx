@@ -1,95 +1,186 @@
+import { useState } from "react";
 import { useGameStore } from "./store/useGameStore";
-import { ROLES, ALL_ROLES } from "./data/roles";
+import { PlayerInputForm } from "./features/game/PlayerInputForm";
+import { RoleAssignment } from "./features/game/RoleAssignment";
+import { PlayerGrid } from "./features/game/PlayerGrid";
+import { Button } from "./components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import type { Role } from "./types";
+import { Play, RotateCcw, Users } from "lucide-react";
+
+type SetupStep = "players" | "roles";
 
 function App() {
-  const { phase, players, addPlayer } = useGameStore();
+  const { phase, players, setPlayers, startGame, resetGame, turnNumber } =
+    useGameStore();
+  const [setupStep, setSetupStep] = useState<SetupStep>("players");
+  const [playerNames, setPlayerNames] = useState<string[]>([]);
 
-  const handleAddTestPlayer = () => {
-    addPlayer("Test Player", ROLES.SEER);
+  const handlePlayersConfirmed = (names: string[]) => {
+    setPlayerNames(names);
+    setSetupStep("roles");
   };
 
-  return (
-    <div className="min-h-screen bg-background text-foreground p-8">
-      <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Wolfed Moderator Assistant</h1>
-          <p className="text-muted-foreground">
-            Foundation Phase - Data Models Complete
-          </p>
-        </header>
+  const handleRolesAssigned = (
+    assignments: { name: string; role: Role }[]
+  ) => {
+    // Clear existing players and add new ones
+    const newPlayers = assignments.map((assignment) => ({
+      id: crypto.randomUUID(),
+      name: assignment.name,
+      role: assignment.role,
+      isAlive: true,
+      isSilenced: false,
+      isAbilityBlocked: false,
+      isProtectedPhysical: false,
+      isProtectedWerewolf: false,
+      linkedTo: null,
+      attributes: [],
+      metadata: {
+        oldManLives: assignment.role.id === "old_man" ? 2 : undefined,
+        heroShieldActive: assignment.role.id === "hero" ? true : undefined,
+        usedAbilities: 0,
+      },
+    }));
 
-        <div className="grid gap-6">
-          {/* Game State */}
-          <div className="bg-muted p-6 rounded-lg">
-            <h2 className="text-2xl font-semibold mb-4">Game State</h2>
-            <div className="space-y-2">
-              <p>
-                <span className="font-medium">Phase:</span> {phase}
-              </p>
-              <p>
-                <span className="font-medium">Players:</span> {players.length}
-              </p>
-            </div>
-          </div>
+    setPlayers(newPlayers);
+    startGame();
+  };
 
-          {/* Test Controls */}
-          <div className="bg-muted p-6 rounded-lg">
-            <h2 className="text-2xl font-semibold mb-4">Test Controls</h2>
-            <button
-              onClick={handleAddTestPlayer}
-              className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:bg-accent/90 transition-colors"
-            >
-              Add Test Player (Seer)
-            </button>
-          </div>
+  const handleResetGame = () => {
+    resetGame();
+    setSetupStep("players");
+    setPlayerNames([]);
+  };
 
-          {/* Roles Registry */}
-          <div className="bg-muted p-6 rounded-lg">
-            <h2 className="text-2xl font-semibold mb-4">
-              Roles Registry ({ALL_ROLES.length} roles)
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-96 overflow-y-auto">
-              {ALL_ROLES.map((role) => (
-                <div
-                  key={role.id}
-                  className="bg-background p-3 rounded border border-border"
-                >
-                  <p className="font-medium text-sm">{role.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Wake: {role.wakeOrder ?? "None"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {role.faction}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+  const handleBackToPlayers = () => {
+    setSetupStep("players");
+  };
 
-          {/* Players List */}
-          {players.length > 0 && (
-            <div className="bg-muted p-6 rounded-lg">
-              <h2 className="text-2xl font-semibold mb-4">Players</h2>
-              <div className="space-y-2">
-                {players.map((player) => (
-                  <div
-                    key={player.id}
-                    className="bg-background p-3 rounded border border-border"
-                  >
-                    <p className="font-medium">{player.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {player.role.name} ({player.role.faction})
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Status: {player.isAlive ? "Alive" : "Dead"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
+  // Setup Phase UI
+  if (phase === "SETUP") {
+    return (
+      <div className="min-h-screen min-h-dvh bg-background text-foreground p-4 md:p-8 safe-area-top safe-area-bottom">
+        <div className="max-w-2xl mx-auto">
+          {/* Header */}
+          <header className="mb-6 md:mb-8 text-center">
+            <h1 className="text-3xl md:text-4xl font-bold mb-2">
+              Wolfed Moderator
+            </h1>
+            <p className="text-sm md:text-base text-muted-foreground">
+              Game Setup
+            </p>
+          </header>
+
+          {/* Setup Steps */}
+          {setupStep === "players" ? (
+            <PlayerInputForm onPlayersConfirmed={handlePlayersConfirmed} />
+          ) : (
+            <RoleAssignment
+              playerNames={playerNames}
+              onRolesAssigned={handleRolesAssigned}
+              onBack={handleBackToPlayers}
+            />
           )}
         </div>
       </div>
+    );
+  }
+
+  // Game Active UI
+  return (
+    <div className="min-h-screen min-h-dvh bg-background text-foreground safe-area-top safe-area-bottom">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+        <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold">
+                Wolfed Moderator
+              </h1>
+              <p className="text-xs md:text-sm text-muted-foreground">
+                {phase === "GAME_OVER" ? "Game Over" : `Night ${turnNumber}`}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetGame}
+              className="gap-2"
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span className="hidden sm:inline">Reset</span>
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+        {/* Game Status Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg md:text-xl flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Game Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Phase</p>
+                <p className="text-base md:text-lg font-semibold">{phase}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Turn</p>
+                <p className="text-base md:text-lg font-semibold">
+                  {turnNumber}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Alive</p>
+                <p className="text-base md:text-lg font-semibold text-success">
+                  {players.filter((p) => p.isAlive).length}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="text-base md:text-lg font-semibold">
+                  {players.length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions - Will be implemented in next phase */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg md:text-xl">Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button variant="primary" className="gap-2" disabled>
+                <Play className="h-4 w-4" />
+                Start Night Phase
+              </Button>
+              <Button variant="outline" disabled>
+                Start Day Phase
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              Night and Day phase controls will be implemented in the next
+              development phase.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Player Grid */}
+        <div>
+          <h2 className="text-xl md:text-2xl font-semibold mb-4">Players</h2>
+          <PlayerGrid players={players} />
+        </div>
+      </main>
     </div>
   );
 }
