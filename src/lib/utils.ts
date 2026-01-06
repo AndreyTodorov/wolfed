@@ -1,0 +1,39 @@
+/**
+ * Utility functions for Wolfed Moderator Assistant
+ */
+
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+/**
+ * Merge Tailwind classes with proper precedence
+ */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+/**
+ * Generate a unique ID
+ */
+export function generateId(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * Shuffle an array using Fisher-Yates algorithm
+ */
+export function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+/**
+ * Format a timestamp to readable time
+ */
+export function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString();
+}
