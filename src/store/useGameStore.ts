@@ -13,6 +13,8 @@ import type {
   GamePhase,
   Faction,
 } from "../types";
+import { resolveNightActions, applyDeaths } from "../lib/nightResolution";
+import { checkWinCondition } from "../lib/winConditions";
 
 interface GameStore extends GameState {
   // ========== STATE SETTERS ==========
@@ -51,6 +53,12 @@ interface GameStore extends GameState {
   // ========== METADATA MANAGEMENT ==========
   updateMetadata: (updates: Partial<GameState["metadata"]>) => void;
   setActiveRole: (roleId: string | null) => void;
+
+  // ========== VOTING & BANISHMENT ==========
+  banishPlayer: (playerId: string) => void;
+
+  // ========== WIN CONDITIONS ==========
+  checkAndSetWinner: () => void;
 }
 
 const initialState: GameState = {
@@ -240,18 +248,43 @@ export const useGameStore = create<GameStore>()(
 
       resolveNightActions: () => {
         const state = get();
-        const { nightActions } = state;
+        const { nightActions, players, metadata } = state;
 
-        // This is where complex resolution logic will go
-        // For now, just log the actions
-        nightActions.forEach((action) => {
-          get().addNightLog(
-            `${action.roleId} performed ${action.actionType} on ${action.targetId}`
-          );
+        // Use the night resolution logic
+        const resolution = resolveNightActions(players, nightActions, metadata);
+
+        // Update metadata
+        if (Object.keys(resolution.metadata).length > 0) {
+          get().updateMetadata(resolution.metadata);
+        }
+
+        // Add logs
+        resolution.logs.forEach((log) => get().addNightLog(log));
+
+        // Apply deaths with linked player handling
+        const { updatedPlayers, linkedDeaths } = applyDeaths(
+          resolution.updatedPlayers,
+          resolution.deaths
+        );
+
+        // Log linked deaths
+        linkedDeaths.forEach((id) => {
+          const player = updatedPlayers.find((p) => p.id === id);
+          if (player) {
+            get().addNightLog(`💔 ${player.name} died (linked player)`);
+          }
         });
 
-        // Process pending deaths
-        get().processPendingDeaths();
+        // Update players
+        set({ players: updatedPlayers });
+
+        // Check win condition after night deaths
+        get().checkAndSetWinner();
+
+        // If game isn't over, transition to day announcement
+        if (get().phase !== "GAME_OVER") {
+          set({ phase: "DAY_ANNOUNCE" });
+        }
       },
 
       // ========== LOGGING ==========
@@ -293,6 +326,47 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           metadata: { ...state.metadata, activeRoleId: roleId },
         })),
+
+      // ========== VOTING & BANISHMENT ==========
+      banishPlayer: (playerId) => {
+        const player = get().players.find((p) => p.id === playerId);
+        if (!player) return;
+
+        // Add to day log
+        get().addDayLog(`${player.name} (${player.role.name}) was banished by vote`);
+
+        // Kill the player
+        get().killPlayer(playerId);
+
+        // Check for Hunter revenge kill
+        if (player.role.id === "hunter") {
+          get().addDayLog(
+            `${player.name} (Hunter) may now shoot someone before dying!`
+          );
+          // Note: Hunter selection would be handled in UI, then call killPlayer
+        }
+
+        // Check win condition after banishment
+        get().checkAndSetWinner();
+      },
+
+      // ========== WIN CONDITIONS ==========
+      checkAndSetWinner: () => {
+        const state = get();
+        const result = checkWinCondition(
+          state.players,
+          state.metadata,
+          state.turnNumber
+        );
+
+        if (result.status === "WIN") {
+          set({
+            phase: "GAME_OVER",
+            winner: result.winner,
+          });
+          get().addDayLog(`GAME OVER: ${result.reason}`);
+        }
+      },
     }),
     {
       name: "wolfed-game-storage", // localStorage key

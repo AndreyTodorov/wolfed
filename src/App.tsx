@@ -3,16 +3,33 @@ import { useGameStore } from "./store/useGameStore";
 import { PlayerInputForm } from "./features/game/PlayerInputForm";
 import { RoleAssignment } from "./features/game/RoleAssignment";
 import { PlayerGrid } from "./features/game/PlayerGrid";
+import { NightPhase } from "./features/game/NightPhase";
+import { DayAnnouncement } from "./features/game/DayAnnouncement";
+import { VotingPhase } from "./features/game/VotingPhase";
+import { GameOver } from "./features/game/GameOver";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import type { Role } from "./types";
-import { Play, RotateCcw, Users } from "lucide-react";
+import { RotateCcw, Users, Moon, Sun } from "lucide-react";
 
 type SetupStep = "players" | "roles";
 
 function App() {
-  const { phase, players, setPlayers, startGame, resetGame, turnNumber } =
-    useGameStore();
+  const {
+    phase,
+    players,
+    setPlayers,
+    startGame,
+    startNight,
+    startDay,
+    resetGame,
+    turnNumber,
+    nightLog,
+    resolveNightActions,
+    metadata,
+    banishPlayer,
+    winner,
+  } = useGameStore();
   const [setupStep, setSetupStep] = useState<SetupStep>("players");
   const [playerNames, setPlayerNames] = useState<string[]>([]);
 
@@ -87,7 +104,150 @@ function App() {
     );
   }
 
-  // Game Active UI
+  const handleStartNight = () => {
+    startNight();
+  };
+
+  const handleNightComplete = () => {
+    // Resolve night actions and transition to day announcement
+    resolveNightActions();
+  };
+
+  const handleDayStart = () => {
+    startDay();
+  };
+
+  const handleBanish = (playerId: string) => {
+    banishPlayer(playerId);
+    // If game isn't over, start next night
+    setTimeout(() => {
+      if (phase !== "GAME_OVER") {
+        startNight();
+      }
+    }, 100);
+  };
+
+  const handleSkipVote = () => {
+    // No banishment, move to next night
+    startNight();
+  };
+
+  // Night Phase UI
+  if (phase === "NIGHT") {
+    return (
+      <div className="min-h-screen min-h-dvh bg-background text-foreground safe-area-top safe-area-bottom">
+        <header className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Moon className="h-6 w-6 text-primary" />
+                <div>
+                  <h1 className="text-xl md:text-2xl font-bold">Night Phase</h1>
+                  <p className="text-xs md:text-sm text-muted-foreground">
+                    Night {turnNumber}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetGame}
+                className="gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-2xl mx-auto p-4 md:p-6 space-y-6">
+          <NightPhase />
+
+          {metadata.activeRoleId === null && (
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              onClick={handleNightComplete}
+            >
+              Process Night & Continue to Morning
+              <Sun className="ml-2 h-5 w-5" />
+            </Button>
+          )}
+        </main>
+      </div>
+    );
+  }
+
+  // Day Announcement UI
+  if (phase === "DAY_ANNOUNCE") {
+    const deadPlayers = players.filter((p) => !p.isAlive);
+    const recentDeaths = deadPlayers.slice(-5); // Show recent deaths
+
+    return (
+      <div className="min-h-screen min-h-dvh bg-background text-foreground p-4 md:p-8 safe-area-top safe-area-bottom">
+        <DayAnnouncement
+          deaths={recentDeaths}
+          nightLog={nightLog}
+          onContinue={handleDayStart}
+        />
+      </div>
+    );
+  }
+
+  // Day/Vote Phase UI
+  if (phase === "DAY_VOTE") {
+    return (
+      <div className="min-h-screen min-h-dvh bg-background text-foreground safe-area-top safe-area-bottom">
+        <header className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Sun className="h-6 w-6 text-warning" />
+                <div>
+                  <h1 className="text-xl md:text-2xl font-bold">Day Phase</h1>
+                  <p className="text-xs md:text-sm text-muted-foreground">
+                    Day {turnNumber} - Voting
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetGame}
+                className="gap-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto p-4 md:p-6">
+          <VotingPhase
+            players={players}
+            onBanish={handleBanish}
+            onSkipVote={handleSkipVote}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // Game Over UI
+  if (phase === "GAME_OVER" && winner) {
+    return (
+      <GameOver
+        winner={winner}
+        reason="Game completed"
+        players={players}
+        turnNumber={turnNumber}
+        onPlayAgain={handleResetGame}
+      />
+    );
+  }
+
+  // Game Active UI (between setup and first night)
   return (
     <div className="min-h-screen min-h-dvh bg-background text-foreground safe-area-top safe-area-bottom">
       {/* Header */}
@@ -99,7 +259,7 @@ function App() {
                 Wolfed Moderator
               </h1>
               <p className="text-xs md:text-sm text-muted-foreground">
-                {phase === "GAME_OVER" ? "Game Over" : `Night ${turnNumber}`}
+                {phase === "GAME_OVER" ? "Game Over" : `Turn ${turnNumber}`}
               </p>
             </div>
             <Button
@@ -153,25 +313,22 @@ function App() {
           </CardContent>
         </Card>
 
-        {/* Quick Actions - Will be implemented in next phase */}
+        {/* Quick Actions */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg md:text-xl">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-2">
-              <Button variant="primary" className="gap-2" disabled>
-                <Play className="h-4 w-4" />
+              <Button
+                variant="primary"
+                className="gap-2"
+                onClick={handleStartNight}
+              >
+                <Moon className="h-4 w-4" />
                 Start Night Phase
               </Button>
-              <Button variant="outline" disabled>
-                Start Day Phase
-              </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
-              Night and Day phase controls will be implemented in the next
-              development phase.
-            </p>
           </CardContent>
         </Card>
 
