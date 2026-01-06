@@ -5,6 +5,8 @@ import { RoleAssignment } from "./features/game/RoleAssignment";
 import { PlayerGrid } from "./features/game/PlayerGrid";
 import { NightPhase } from "./features/game/NightPhase";
 import { DayAnnouncement } from "./features/game/DayAnnouncement";
+import { VotingPhase } from "./features/game/VotingPhase";
+import { GameOver } from "./features/game/GameOver";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import type { Role } from "./types";
@@ -25,6 +27,8 @@ function App() {
     nightLog,
     resolveNightActions,
     metadata,
+    banishPlayer,
+    winner,
   } = useGameStore();
   const [setupStep, setSetupStep] = useState<SetupStep>("players");
   const [playerNames, setPlayerNames] = useState<string[]>([]);
@@ -113,6 +117,21 @@ function App() {
     startDay();
   };
 
+  const handleBanish = (playerId: string) => {
+    banishPlayer(playerId);
+    // If game isn't over, start next night
+    setTimeout(() => {
+      if (phase !== "GAME_OVER") {
+        startNight();
+      }
+    }, 100);
+  };
+
+  const handleSkipVote = () => {
+    // No banishment, move to next night
+    startNight();
+  };
+
   // Night Phase UI
   if (phase === "NIGHT") {
     return (
@@ -188,7 +207,7 @@ function App() {
                 <div>
                   <h1 className="text-xl md:text-2xl font-bold">Day Phase</h1>
                   <p className="text-xs md:text-sm text-muted-foreground">
-                    Day {turnNumber} - Discussion & Voting
+                    Day {turnNumber} - Voting
                   </p>
                 </div>
               </div>
@@ -204,28 +223,27 @@ function App() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Day Phase (Voting Coming Soon)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-muted-foreground">
-                Voting interface will be implemented in the next phase.
-              </p>
-              <Button variant="primary" onClick={handleStartNight}>
-                <Moon className="mr-2 h-4 w-4" />
-                Start Next Night
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div>
-            <h2 className="text-xl md:text-2xl font-semibold mb-4">Players</h2>
-            <PlayerGrid players={players} />
-          </div>
+        <main className="max-w-7xl mx-auto p-4 md:p-6">
+          <VotingPhase
+            players={players}
+            onBanish={handleBanish}
+            onSkipVote={handleSkipVote}
+          />
         </main>
       </div>
+    );
+  }
+
+  // Game Over UI
+  if (phase === "GAME_OVER" && winner) {
+    return (
+      <GameOver
+        winner={winner}
+        reason="Game completed"
+        players={players}
+        turnNumber={turnNumber}
+        onPlayAgain={handleResetGame}
+      />
     );
   }
 

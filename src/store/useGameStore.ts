@@ -14,6 +14,7 @@ import type {
   Faction,
 } from "../types";
 import { resolveNightActions, applyDeaths } from "../lib/nightResolution";
+import { checkWinCondition } from "../lib/winConditions";
 
 interface GameStore extends GameState {
   // ========== STATE SETTERS ==========
@@ -52,6 +53,12 @@ interface GameStore extends GameState {
   // ========== METADATA MANAGEMENT ==========
   updateMetadata: (updates: Partial<GameState["metadata"]>) => void;
   setActiveRole: (roleId: string | null) => void;
+
+  // ========== VOTING & BANISHMENT ==========
+  banishPlayer: (playerId: string) => void;
+
+  // ========== WIN CONDITIONS ==========
+  checkAndSetWinner: () => void;
 }
 
 const initialState: GameState = {
@@ -271,8 +278,13 @@ export const useGameStore = create<GameStore>()(
         // Update players
         set({ players: updatedPlayers });
 
-        // Transition to day announcement
-        set({ phase: "DAY_ANNOUNCE" });
+        // Check win condition after night deaths
+        get().checkAndSetWinner();
+
+        // If game isn't over, transition to day announcement
+        if (get().phase !== "GAME_OVER") {
+          set({ phase: "DAY_ANNOUNCE" });
+        }
       },
 
       // ========== LOGGING ==========
@@ -314,6 +326,47 @@ export const useGameStore = create<GameStore>()(
         set((state) => ({
           metadata: { ...state.metadata, activeRoleId: roleId },
         })),
+
+      // ========== VOTING & BANISHMENT ==========
+      banishPlayer: (playerId) => {
+        const player = get().players.find((p) => p.id === playerId);
+        if (!player) return;
+
+        // Add to day log
+        get().addDayLog(`${player.name} (${player.role.name}) was banished by vote`);
+
+        // Kill the player
+        get().killPlayer(playerId);
+
+        // Check for Hunter revenge kill
+        if (player.role.id === "hunter") {
+          get().addDayLog(
+            `${player.name} (Hunter) may now shoot someone before dying!`
+          );
+          // Note: Hunter selection would be handled in UI, then call killPlayer
+        }
+
+        // Check win condition after banishment
+        get().checkAndSetWinner();
+      },
+
+      // ========== WIN CONDITIONS ==========
+      checkAndSetWinner: () => {
+        const state = get();
+        const result = checkWinCondition(
+          state.players,
+          state.metadata,
+          state.turnNumber
+        );
+
+        if (result.status === "WIN") {
+          set({
+            phase: "GAME_OVER",
+            winner: result.winner,
+          });
+          get().addDayLog(`GAME OVER: ${result.reason}`);
+        }
+      },
     }),
     {
       name: "wolfed-game-storage", // localStorage key
